@@ -42,7 +42,7 @@ class DHLTrackingApp:
         top_frame = ttk.Frame(self.track_frame)
         top_frame.pack(fill='x', pady=10, padx=10)
 
-        original_image = Image.open(r"C:\Users\aa83w\Documents\Projects\DHL\Cummins.png")
+        original_image = Image.open(r"file_path") #ENTER FILE PATH
         width, height = original_image.size
         new_size = (int(width * 0.2), int(height * 0.2))
         resized_image = original_image.resize(new_size, Image.Resampling.LANCZOS)
