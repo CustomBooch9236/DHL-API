@@ -6,7 +6,6 @@ This DHL Tracking App, built with Python's Tkinter, allows users to track shipme
 - Input and search for multiple AWB tracking numbers
 - View shipment details including origin, destination, status, and timestamp
 - Filter data by AWB, Origin, and Status
-- Sort data by any column
 - Export filtered data to CSV or Excel
 - Rich-text note-taking area with bold, italics, and underline support
 - Clean, tabbed UI with dedicated sections for Tracking, Settings, and About
