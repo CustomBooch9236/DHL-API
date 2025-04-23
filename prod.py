@@ -18,7 +18,7 @@ location_to_site = {
     'LEEDS - UK': 'CTT'
 }
 
-API_KEY = 'Q1msFzziSbBq4qiqgqnQHy1aaWrZK5ow'
+API_KEY = '' #enter your API key
 cache = {}
 
 window = tk.Tk()
@@ -28,7 +28,7 @@ window.configure(bg='#F8EFD8')
 
 auto_refresh_enabled = tk.BooleanVar(value=True)
 
-logo_path = r"C:\Users\aa83w\OneDrive - Cummins\Documents\Projects\DHL\Cummins.png"
+logo_path = r"" #file path
 logo_image = Image.open(logo_path).resize((100, 100), Image.Resampling.LANCZOS)
 logo_tk = ImageTk.PhotoImage(logo_image)
 tk.Label(window, image=logo_tk, bg='#F8EFD8').place(x=10, y=10)
