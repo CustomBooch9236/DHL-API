@@ -24,46 +24,40 @@ cache = {}
 window = tk.Tk()
 window.title("DHL Shipment Tracker")
 window.geometry("1000x700")
+window.configure(bg='#F8EFD8')
 
 auto_refresh_enabled = tk.BooleanVar(value=True)
 
-# Logo
-logo_path = r"C:\Users\aa83w\Documents\Projects\DHL\Cummins.png"
+logo_path = r"C:\Users\aa83w\OneDrive - Cummins\Documents\Projects\DHL\Cummins.png"
 logo_image = Image.open(logo_path).resize((100, 100), Image.Resampling.LANCZOS)
 logo_tk = ImageTk.PhotoImage(logo_image)
-tk.Label(window, image=logo_tk).place(x=10, y=10)
+tk.Label(window, image=logo_tk, bg='#F8EFD8').place(x=10, y=10)
 
-# Entry field
-tk.Label(window, text="Enter Tracking Numbers (comma separated):").pack(pady=(70, 0))
-tracking_numbers_entry = tk.Entry(window, width=70)
+tk.Label(window, text="Enter Tracking Numbers (comma separated):", fg="black", bg="#F8EFD8").pack(pady=(70, 0))
+tracking_numbers_entry = tk.Entry(window, width=70, fg="black", bg="white")
 tracking_numbers_entry.pack()
 
-# Frame for buttons
-button_frame = tk.Frame(window)
+button_frame = tk.Frame(window, bg='#F8EFD8')
 button_frame.pack(pady=10)
 
-# Track Shipments Button
-track_button = tk.Button(button_frame, text="Track Shipments", command=lambda: process_tracking_numbers())
+track_button = tk.Button(button_frame, text="Track Shipments", command=lambda: process_tracking_numbers(), fg='white', bg='#c6171e')
 track_button.pack(side="left", padx=5)
 
-# Download Button
-download_button = tk.Button(button_frame, text="Download CSV", command=lambda: ask_download())
+download_button = tk.Button(button_frame, text="Download CSV", command=lambda: ask_download(), fg='white', bg='#c6171e')
 download_button.pack(side="left", padx=5)
 
-# Notebook
 notebook = ttk.Notebook(window)
 notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
-results_tab = ttk.Frame(notebook)
-cache_tab = ttk.Frame(notebook)
-settings_tab = ttk.Frame(notebook)
-about_tab = ttk.Frame(notebook)
+results_tab = tk.Frame(notebook, bg='#F8EFD8')
+cache_tab = tk.Frame(notebook, bg='#F8EFD8')
+settings_tab = tk.Frame(notebook, bg='#F8EFD8')
+about_tab = tk.Frame(notebook, bg='#F8EFD8')
 notebook.add(results_tab, text="Tracking Results")
 notebook.add(cache_tab, text="Cached Data")
 notebook.add(settings_tab, text="Settings")
 notebook.add(about_tab, text="About")
 
-# Treeview setup
 columns = ["Site", "Tracking Number", "Status", "Delivered On", "ETA"]
 treeview = ttk.Treeview(results_tab, columns=columns, show="headings")
 cache_table = ttk.Treeview(cache_tab, columns=columns, show="headings")
@@ -74,30 +68,61 @@ for col in columns:
     cache_table.heading(col, text=col)
     cache_table.column(col, width=140, anchor="center")
 
+filter_frame = tk.Frame(results_tab, bg='#F8EFD8')
+filter_frame.pack(pady=10)
+
+filter_options = {}
+filter_buttons = {}
+
+def show_multiselect(col):
+    top = tk.Toplevel(window)
+    top.title(f"{col} Filter")
+    top.configure(bg="#F8EFD8")
+
+    var_dict = {}
+    for val in sorted({r[col] for r in cache.values()}):
+        var = tk.BooleanVar()
+        chk = tk.Checkbutton(top, text=val, variable=var, bg="#F8EFD8")
+        chk.pack(anchor="w")
+        var_dict[val] = var
+
+    def apply_selection():
+        selected = [val for val, var in var_dict.items() if var.get()]
+        filter_options[col] = selected
+        top.destroy()
+        process_tracking_numbers()
+
+    tk.Button(top, text="Apply", command=apply_selection, fg='white', bg='#c6171e').pack(pady=5)
+
+for col in columns:
+    btn = tk.Button(filter_frame, text=f"{col} Filter", command=lambda c=col: show_multiselect(c), fg='black', bg='#FFCC00')  
+    btn.pack(side="left", padx=5)
+    filter_buttons[col] = btn
+    filter_options[col] = []
+
+tk.Button(filter_frame, text="Clear Filters", command=lambda: clear_filters(), fg='black', bg='#FFCC00').pack(side="left", padx=5)
+
+tk.Label(results_tab, text="Shipment Tracking Results", fg="black", bg="#F8EFD8", font=("Helvetica", 12, "bold")).pack(pady=10)
+
 treeview.pack(pady=10, fill="both", expand=True)
 cache_table.pack(pady=10, fill="both", expand=True)
 
-# Notes section
-notes_text = tk.Text(results_tab, height=5)
+notes_text = tk.Text(results_tab, height=5, fg="black", bg="white")
 notes_text.pack(fill="x", padx=10, pady=(0, 10))
-tk.Button(results_tab, text="Clear Notes", command=lambda: notes_text.delete("1.0", "end")).pack()
+tk.Button(results_tab, text="Clear Notes", command=lambda: notes_text.delete("1.0", "end"), fg='white', bg='#c6171e').pack()
 
-# Load cache manually
-tk.Button(cache_tab, text="Load Cached Data", command=lambda: load_cache()).pack(pady=5)
+tk.Button(cache_tab, text="Load Cached Data", command=lambda: load_cache(), fg='white', bg='#c6171e').pack(pady=5)
 
-# Settings tab
-tk.Label(settings_tab, text="Auto Refresh Interval (seconds):").pack(pady=(10, 0))
-refresh_interval_entry = tk.Entry(settings_tab)
+tk.Label(settings_tab, text="Auto Refresh Interval (seconds):", fg="black", bg="#F8EFD8").pack(pady=(10, 0))
+refresh_interval_entry = tk.Entry(settings_tab, fg="black", bg="white")
 refresh_interval_entry.insert(0, "60")
 refresh_interval_entry.pack()
 
-tk.Checkbutton(settings_tab, text="Enable Auto Refresh", variable=auto_refresh_enabled).pack(pady=10)
+tk.Checkbutton(settings_tab, text="Enable Auto Refresh", variable=auto_refresh_enabled, fg='black', bg="#F8EFD8").pack(pady=10)
 
-# About tab
 about_text = "DHL Shipment Tracker\nVersion 1.1\nDeveloped by Sumit Chaturvedi, Cummins UK\nFor internal shipment visibility and tracking."
-tk.Label(about_tab, text=about_text, justify="left").pack(padx=10, pady=10, anchor="nw")
+tk.Label(about_tab, text=about_text, justify="left", fg="black", bg="#F8EFD8").pack(padx=10, pady=10, anchor="nw")
 
-# Helper functions
 def sort_column(tv, col):
     data = [(tv.set(k, col), k) for k in tv.get_children()]
     is_desc = getattr(tv, "_sorted_desc", {}).get(col, False)
@@ -148,6 +173,13 @@ def get_delivery_status(tracking_number, force_api=False):
     cache[tracking_number] = result
     return result
 
+def apply_filters():
+    filtered_data = list(cache.values())
+    for col, selected_values in filter_options.items():
+        if selected_values:
+            filtered_data = [r for r in filtered_data if r[col] in selected_values]
+    return filtered_data
+
 def process_tracking_numbers():
     raw_input = tracking_numbers_entry.get()
     if not raw_input:
@@ -155,24 +187,20 @@ def process_tracking_numbers():
         return
 
     tracking_numbers = [x.strip() for x in raw_input.split(",") if x.strip()]
-    results = []
     for tn in tracking_numbers:
-        result = get_delivery_status(tn)
-        results.append(result)
-        if tn not in cache or result["Status"] == "Unavailable":
-            time.sleep(5)
+        get_delivery_status(tn)
+        time.sleep(5)
 
     for row in treeview.get_children():
         treeview.delete(row)
 
-    for r in results:
+    filtered_results = apply_filters()
+    for r in filtered_results:
         treeview.insert("", "end", values=(r["Site"], r["Tracking Number"], r["Status"], r["Delivered On"], r["ETA"]))
-
-    ask_download(results)
 
 def ask_download(data=None):
     if not data:
-        data = []
+        data = list(cache.values())
     download = messagebox.askyesno("Download CSV", "Do you want to download the results as a CSV file?")
     if download:
         path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
@@ -199,6 +227,10 @@ def auto_refresh():
         except ValueError:
             messagebox.showwarning("Invalid Input", "Please enter a valid number for the auto-refresh interval.")
 
-# Start auto-refresh loop
+def clear_filters():
+    for col in filter_options:
+        filter_options[col] = []
+    process_tracking_numbers()
+
 auto_refresh()
 window.mainloop()
