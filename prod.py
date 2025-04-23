@@ -174,7 +174,7 @@ class DHLTrackingApp:
         all_data = []
         for awb in awbs:
             url = f"https://api-eu.dhl.com/track/shipments?trackingNumber={awb}"
-            headers = {'DHL-API-Key': 'Q1msFzziSbBq4qiqgqnQHy1aaWrZK5ow'}
+            headers = {'DHL-API-Key': ''} #enter API key
             try:
                 response = requests.get(url, headers=headers, verify=False)
                 if response.status_code == 200:
