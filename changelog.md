@@ -35,9 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - User input handling: Added input validation to ensure that the auto-refresh interval is a positive integer, avoiding errors and ensuring stability.
-- User input handling: Added input validation to ensure that the auto-refresh interval is a positive integer, avoiding errors and ensuring stability.
 
 ### Known Issues
 - UI resizing behaviour for all elements not fully responsive.
 - Notes section does not persist across app restarts.
-- Filters currently not functional
+- Filters functional, but slow
