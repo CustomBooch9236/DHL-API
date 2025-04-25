@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search functionality with multiple AWBs.
 - Sortable Treeview displaying AWB, Origin, Destination, Status, and Timestamp.
 - Filter panel with dropdowns for AWB, Origin, and Status.
+- Filters functional, but slow
 - Export functionality supporting CSV and Excel formats.
 - Column selection in export settings.
 - Settings and About tabs with project details.
@@ -32,11 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Caching improvement: The app now checks if the tracking number exists in the cache before querying the DHL API to avoid redundant requests.
 - Auto-refresh feature: Automatic periodic updates of AWB status, based on a user-defined interval in the Settings tab.
+- Added filter summaries.
 
 ### Fixed
 - User input handling: Added input validation to ensure that the auto-refresh interval is a positive integer, avoiding errors and ensuring stability.
+- Improved filter speed, by using cached data.
 
 ### Known Issues
 - UI resizing behaviour for all elements not fully responsive.
 - Notes section does not persist across app restarts.
-- Filters functional, but slow
+
