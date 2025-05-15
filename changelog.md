@@ -58,3 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Known Issues
 - Some caching mechanisms may cause outdated data to appear temporarily after a user login.
 - Notes section does not persist across app restarts.
+
+## [2.1.0] - 2025-05-15
+
+### Added
+- Time limit per query in accordance with DHL limits
+- Persistent comments section for every AWB
+
+### Fixed
+- Resizing issues between Results/Comments 
