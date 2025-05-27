@@ -30,3 +30,5 @@ This DHL Tracking App, built with Python's Tkinter and PyQt5, allows users to tr
 
 ## Future Updates
 - Enhanced user profile management features
+- Increased API calls
+- PoD functionality
