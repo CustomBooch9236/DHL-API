@@ -8,27 +8,21 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget, 
                              QTableWidgetItem, QComboBox, QTextEdit, QMessageBox, QDialog,
                              QFormLayout, QCheckBox, QFileDialog, QGroupBox, QProgressBar, 
-                             QSplitter)
-from PyQt5.QtGui import QFont, QIcon, QTextCharFormat, QColor
-from PyQt5.QtCore import Qt, pyqtSignal, QThread
+                             QSplitter, QMenu)
+from PyQt5.QtGui import QFont, QIcon, QTextCharFormat, QColor, QDesktopServices
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QUrl
 import urllib3
 import time
+from collections import Counter
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Constants
 APP_NAME = "DHL Tracker"
-APP_VERSION = "2.1"
+APP_VERSION = "2.2"
 SETTINGS_FILE = "settings.json"
 CACHE_FILE = "cache.json"
 
-# Base API endpoints for different users
-API_ENDPOINTS = {
-    "Cummins UK": "https://api-eu.dhl.com/track/shipments",
-    "Cummins BE": "https://api-eu.dhl.com/track/shipments",
-    "Cummins DE": "https://api-eu.dhl.com/track/shipments",
-    "Cummins NL": "https://api-eu.dhl.com/track/shipments"
-}
+API_ENDPOINT = "https://api-eu.dhl.com/track/shipments"
 
 class ApiWorker(QThread):
     finished = pyqtSignal(list)
@@ -46,7 +40,7 @@ class ApiWorker(QThread):
 
         for i, awb in enumerate(self.awb_list):
             try:
-                self.progress.emit(int((i / total) * 100))
+                self.progress.emit(int((i + 1 / total) * 100))
 
                 result = self.api_client.track_shipment(awb)
 
@@ -54,7 +48,7 @@ class ApiWorker(QThread):
                     results.append(result)
 
                 if i < total - 1:
-                    time.sleep(5)  # Wait 5 seconds between requests
+                    time.sleep(1)
             except Exception as e:
                 self.error.emit(f"Error tracking AWB {awb}: {str(e)}")
 
@@ -65,7 +59,7 @@ class TrackingApiClient:
     def __init__(self, user_label, api_key):
         self.user_label = user_label
         self.api_key = api_key
-        self.base_url = "https://api-eu.dhl.com/track/shipments"
+        self.base_url = API_ENDPOINT
 
     def track_shipment(self, awb):
         if not awb:
@@ -100,14 +94,12 @@ class TrackingApiClient:
             }
 
         shipment = data["shipments"][0]
-
-        # Last event = most recent checkpoint
+        
         events = shipment.get("events", [])
         last_event = events[0] if events else {}
         last_status = last_event.get("statusCode", "N/A").capitalize()
         last_timestamp = last_event.get("timestamp", "")
 
-        # Find the delivery timestamp if it exists
         delivered_on = "N/A"
         for event in events:
             if event.get("statusCode", "").lower() == "delivered":
@@ -124,77 +116,77 @@ class TrackingApiClient:
         except ValueError:
             delivered_fmt = delivered_on
 
+        proof_of_delivery_url = "N/A"
+
+        details = shipment.get("details", {})
+        if "proofOfDelivery" in details:
+            proof_of_delivery_url = details["proofOfDelivery"].get("documentUrl", "N/A")
+
+        eta_raw = shipment.get("estimatedTimeOfDelivery", "N/A")
+        try:
+            eta_fmt = datetime.fromisoformat(eta_raw).strftime('%Y-%m-%d %H:%M:%S') if eta_raw != "N/A" else "N/A"
+        except ValueError:
+            eta_fmt = eta_raw
+
         return {
             'awb': awb,
             'origin': shipment.get("origin", {}).get("address", {}).get("addressLocality", "UNKNOWN"),
             'destination': shipment.get("destination", {}).get("address", {}).get("addressLocality", "UNKNOWN"),
             'status': last_status,
             'timestamp': last_timestamp_fmt,
-            'delivered_on': delivered_fmt
-        }
+            'delivered_on': delivered_fmt,
+            'proof_of_delivery': proof_of_delivery_url,
+            'events_full': events,
+            'eta': eta_fmt
+}
 
 class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Login")
         self.setMinimumWidth(300)
-        
-        # User credentials and API keys
-        self.users = {
-            "Cummins UK": "",
-            "Cummins BE": "",
-            "Cummins DE": "",
-            "Cummins NL": ""
-        }
-        
+
+        self.sites = ["x", "y", "z"]
+
         self.api_keys = {
-            "Cummins UK": "",
-            "Cummins DE": "",
-            "Cummins NL": "",  
-            "Cummins BE": ""
+            "Primary": "",
+            "Backup": ""
         }
-        
-        # Setup UI
+
         layout = QVBoxLayout()
         form_layout = QFormLayout()
-        
-        self.username_input = QComboBox()
-        self.username_input.addItems(list(self.users.keys()))
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.Password)
-        
-        form_layout.addRow("Username:", self.username_input)
-        form_layout.addRow("Password:", self.password_input)
-        
+
+        self.site_selector = QComboBox()
+        self.site_selector.addItems(self.sites)
+
+        self.api_selector = QComboBox()
+        self.api_selector.addItems(["Primary", "Backup"])
+
+        form_layout.addRow("Select Site:", self.site_selector)
+        form_layout.addRow("API Account:", self.api_selector)
+
         layout.addLayout(form_layout)
-        
+
         button_layout = QHBoxLayout()
         self.login_button = QPushButton("Login")
-        self.login_button.clicked.connect(self.try_login)
+        self.login_button.clicked.connect(self.accept)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
-        
         button_layout.addWidget(self.login_button)
         button_layout.addWidget(self.cancel_button)
-        
+
         layout.addLayout(button_layout)
         self.setLayout(layout)
-        
-    def try_login(self):
-        username = self.username_input.currentText()
-        password = self.password_input.text()
-        
-        if username in self.users and self.users[username] == password:
-            self.current_user = username
-            self.current_api = self.api_keys[username]
-            self.accept()
-        else:
-            QMessageBox.warning(self, "Login Failed", "Invalid username or password")
+
+    def accept(self):
+        self.selected_site = self.site_selector.currentText()
+        self.selected_api = self.api_keys[self.api_selector.currentText()]
+        super().accept()
 
 class RichTextEditor(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(150)
+        self.setMinimumHeight(50)
         
     def format_text(self, format_type):
         format = QTextCharFormat()
@@ -209,6 +201,35 @@ class RichTextEditor(QTextEdit):
             
         self.mergeCurrentCharFormat(format)
 
+class TrackingHistoryDialog(QDialog):
+    def __init__(self, awb, history_events, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Tracking History: {awb}")
+        self.setMinimumSize(800, 400)
+
+        layout = QVBoxLayout()
+
+        self.text_area = QTextEdit()
+        self.text_area.setReadOnly(True)
+
+        html = "<h2>Tracking Events</h2><ul style='font-family: monospace;'>"
+        for event in history_events:
+            time_str = event.get("timestamp", "N/A")
+            location = event.get("location", {}).get("address", {}).get("addressLocality", "Unknown Location")
+            description = event.get("description", "No Description")
+            html += f"<li><b>{time_str}</b> — {description} <i>({location})</i></li>"
+        html += "</ul>"
+
+        self.text_area.setHtml(html)
+
+        layout.addWidget(self.text_area)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn)
+
+        self.setLayout(layout)
+
 class AWBTrackerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -218,45 +239,59 @@ class AWBTrackerApp(QMainWindow):
         self.comments_data = self.load_comments()
         self.current_awb_in_focus = None
         
-        # Show login dialog
         login_dialog = LoginDialog(self)
         if login_dialog.exec_() == QDialog.Accepted:
-            self.current_user = login_dialog.current_user
-            self.current_api = login_dialog.current_api
-            
-            # Initialize API client
+            self.current_user = login_dialog.selected_site
+            self.current_api = login_dialog.selected_api
             self.api_client = TrackingApiClient(self.current_user, self.current_api)
         else:
             sys.exit()
         
-        # Load cache data
         self.cache_data = self.load_cache()
         
         self.init_ui()
-    
+
+    def handle_results_double_click(self, row, column):
+        if column == 0: 
+            item = self.results_table.item(row, 0)
+            if item is None:
+                QMessageBox.warning(self, "Selection Error", "No AWB found in the selected row.")
+                return
+            
+            awb = item.text()
+
+            shipment = next((s for s in self.cache_data if s['awb'] == awb), None)
+            if not shipment:
+                QMessageBox.information(self, "No Data", f"No tracking history found for AWB {awb}")
+                return
+
+            tracking_history = shipment.get("events_full", [])
+            if not tracking_history:
+                QMessageBox.information(self, "No Events", f"No tracking events found for AWB {awb}")
+                return
+
+            dialog = TrackingHistoryDialog(awb, tracking_history, self)
+            dialog.exec_()
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         
         main_layout = QVBoxLayout()
         
-        # Status bar for showing current user
         self.statusBar().showMessage(f"Logged in as: {self.current_user}")
         
-        # Create tabs
         self.tabs = QTabWidget()
         self.tracking_tab = QWidget()
         self.cache_tab = QWidget()
         self.settings_tab = QWidget()
         self.about_tab = QWidget()
         
-        # Set up each tab
         self.setup_tracking_tab()
         self.setup_cache_tab()
         self.setup_settings_tab()
         self.setup_about_tab()
         
-        # Add tabs to widget
         self.tabs.addTab(self.tracking_tab, "Tracking")
         self.tabs.addTab(self.cache_tab, "Cache")
         self.tabs.addTab(self.settings_tab, "Settings")
@@ -268,60 +303,65 @@ class AWBTrackerApp(QMainWindow):
     def setup_tracking_tab(self):
         layout = QVBoxLayout()
 
-        # Search section
         search_layout = QHBoxLayout()
         self.awb_input = QLineEdit()
         self.awb_input.setPlaceholderText("Enter AWB number(s) - separate multiple with commas")
         search_button = QPushButton("Search")
         search_button.clicked.connect(self.search_awb)
-
         search_layout.addWidget(QLabel("AWB:"))
         search_layout.addWidget(self.awb_input)
         search_layout.addWidget(search_button)
 
-        # Filters layout
         filter_layout = QHBoxLayout()
-
         self.filter_awb = QLineEdit()
         self.filter_awb.setPlaceholderText("Filter AWB")
         self.filter_awb.textChanged.connect(self.apply_filters)
-
         self.filter_origin = QComboBox()
         self.filter_origin.addItem("All Origins")
         self.filter_origin.currentTextChanged.connect(self.apply_filters)
-
         self.filter_status = QComboBox()
         self.filter_status.addItem("All Statuses")
         self.filter_status.currentTextChanged.connect(self.apply_filters)
-
         export_button = QPushButton("Export Data")
         export_button.clicked.connect(self.export_data)
-
         filter_layout.addWidget(QLabel("Filter:"))
         filter_layout.addWidget(self.filter_awb)
         filter_layout.addWidget(self.filter_origin)
         filter_layout.addWidget(self.filter_status)
         filter_layout.addWidget(export_button)
 
-        # Add search and filter layouts to main layout
         layout.addLayout(search_layout)
         layout.addLayout(filter_layout)
 
-        # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
-        # Results table
-        self.results_table = QTableWidget()
-        self.results_table.setColumnCount(5)
-        self.results_table.setHorizontalHeaderLabels(["AWB", "Origin", "Destination", "Status", "Delivered On"])
-        self.results_table.horizontalHeader().setStretchLastSection(True)
+        top_widget = QWidget()
+        top_layout = QVBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Comment widget and layout
+        self.results_table = QTableWidget()
+        self.results_table.setColumnCount(7)
+        self.results_table.setHorizontalHeaderLabels(["AWB", "Origin", "Destination", "Status", "Delivered On", "ETA", "Proof of Delivery"])
+        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.cellDoubleClicked.connect(self.handle_results_double_click)
+        self.results_table.cellClicked.connect(self.handle_pod_click)
+        self.results_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.results_table.customContextMenuRequested.connect(self.show_table_context_menu)
+
+        self.summary_label = QLabel("Total Shipments: 0")
+        self.summary_label.setAlignment(Qt.AlignRight)
+        self.summary_label.setStyleSheet("font-weight: bold; padding: 5px;")
+
+        top_layout.addWidget(self.results_table)
+        top_layout.addWidget(self.summary_label)
+        top_widget.setLayout(top_layout)
+
         comment_widget = QWidget()
         comment_layout = QVBoxLayout()
         comment_label_layout = QHBoxLayout()
+
         comment_label_layout.addWidget(QLabel("Comment for Selected AWB:"))
         comment_label_layout.addStretch()
 
@@ -337,23 +377,71 @@ class AWBTrackerApp(QMainWindow):
         comment_layout.addWidget(save_comment_btn)
         comment_widget.setLayout(comment_layout)
 
-        # Create a vertical splitter for results and comments
         splitter = QSplitter(Qt.Vertical)
-        splitter.addWidget(self.results_table)
+        splitter.addWidget(top_widget)
         splitter.addWidget(comment_widget)
-        splitter.setSizes([400, 100])  # Approx 80% / 20% (adjust pixel values as needed)
+
+        splitter.setSizes([600, 100])
 
         layout.addWidget(splitter)
 
         self.tracking_tab.setLayout(layout)
 
-        # Connect row selection to comment loading
         self.results_table.itemSelectionChanged.connect(self.load_selected_awb_comment)
+
+
+    def show_table_context_menu(self, position):
+        index = self.results_table.indexAt(position)
+        if not index.isValid():
+            return
+
+        row = index.row()
+        awb_item = self.results_table.item(row, 0)
+        pod_item = self.results_table.item(row, 6)
+
+        if awb_item is None:
+            return
+
+        awb = awb_item.text()
+        pod_link = pod_item.text() if pod_item else "N/A"
+
+        menu = QMenu(self)
+
+        view_history_action = menu.addAction("View Tracking History")
+        copy_awb_action = menu.addAction("Copy AWB")
+        comment_action = menu.addAction("Add/Edit Comment")
+        if pod_link and pod_link != "N/A":
+            pod_action = menu.addAction("Open Proof of Delivery")
+
+        action = menu.exec_(self.results_table.viewport().mapToGlobal(position))
+
+        if action == view_history_action:
+            self.handle_results_double_click(row, 0)
+
+        elif action == copy_awb_action:
+            QApplication.clipboard().setText(awb)
+
+        elif action == comment_action:
+            self.results_table.selectRow(row)
+            self.load_selected_awb_comment()
+            self.comment_editor.setFocus()
+
+        elif pod_link and pod_link != "N/A" and action == pod_action:
+            QDesktopServices.openUrl(QUrl(pod_link))
+
+    def handle_pod_click(self, row, column):
+        if column == 6: 
+            modifiers = QApplication.keyboardModifiers()
+            if modifiers == Qt.ControlModifier:
+                item = self.results_table.item(row, column)
+                url = item.text()
+                if url.startswith("http"):
+                    import webbrowser
+                    webbrowser.open(url)
     
     def setup_cache_tab(self):
         layout = QVBoxLayout()
         
-        # Cache information
         info_layout = QHBoxLayout()
         self.cache_count_label = QLabel(str(len(self.cache_data)))
         
@@ -367,14 +455,12 @@ class AWBTrackerApp(QMainWindow):
         
         layout.addLayout(info_layout)
         
-        # Cache table
         self.cache_table = QTableWidget()
         self.cache_table.setColumnCount(6)
         self.cache_table.setHorizontalHeaderLabels(["AWB", "Origin", "Destination", "Status", "Last Update", "Delivered On"])
         self.cache_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.cache_table)
         
-        # Filter options (reused from tracking tab)
         filter_layout = QHBoxLayout()
         
         self.cache_filter_awb = QLineEdit()
@@ -401,19 +487,16 @@ class AWBTrackerApp(QMainWindow):
         layout.addLayout(filter_layout)
         self.cache_tab.setLayout(layout)
         
-        # Populate cache table
         self.update_cache_display()
     
     def setup_settings_tab(self):
         layout = QVBoxLayout()
         
-        # User information section
         user_group = QGroupBox("User Information")
         user_layout = QFormLayout()
         
         self.current_user_label = QLabel(self.current_user)
         
-        # API key section with masked display
         api_layout = QHBoxLayout()
         self.api_key_label = QLineEdit(self.current_api)
         self.api_key_label.setEchoMode(QLineEdit.Password)
@@ -425,8 +508,7 @@ class AWBTrackerApp(QMainWindow):
         api_layout.addWidget(self.api_key_label)
         api_layout.addWidget(self.toggle_api_visibility)
         
-        # Endpoint display
-        self.endpoint_label = QLineEdit(API_ENDPOINTS.get(self.current_user, "Unknown"))
+        self.endpoint_label = QLineEdit(API_ENDPOINT)
         self.endpoint_label.setReadOnly(True)
         
         user_layout.addRow("Current User:", self.current_user_label)
@@ -436,7 +518,6 @@ class AWBTrackerApp(QMainWindow):
         user_group.setLayout(user_layout)
         layout.addWidget(user_group)
         
-        # Application settings
         app_settings_group = QGroupBox("Application Settings")
         settings_layout = QFormLayout()
         
@@ -446,17 +527,17 @@ class AWBTrackerApp(QMainWindow):
         self.cache_days = QComboBox()
         for days in [1, 3, 7, 14, 30]:
             self.cache_days.addItem(f"{days} days")
-        self.cache_days.setCurrentIndex(2)  # Default to 7 days
+        self.cache_days.setCurrentIndex(2)
         
         self.api_timeout = QComboBox()
         for timeout in [10, 20, 30, 60]:
             self.api_timeout.addItem(f"{timeout} seconds")
-        self.api_timeout.setCurrentIndex(2)  # Default to 30 seconds
+        self.api_timeout.setCurrentIndex(2)
         
         self.retry_count = QComboBox()
         for count in [0, 1, 2, 3]:
             self.retry_count.addItem(f"{count} retries")
-        self.retry_count.setCurrentIndex(1)  # Default to 1 retry
+        self.retry_count.setCurrentIndex(1)  
         
         settings_layout.addRow("Enable Cache:", self.cache_enabled)
         settings_layout.addRow("Cache Duration:", self.cache_days)
@@ -466,14 +547,9 @@ class AWBTrackerApp(QMainWindow):
         app_settings_group.setLayout(settings_layout)
         layout.addWidget(app_settings_group)
         
-        # Action buttons
-        test_api_button = QPushButton("Test API Connection")
-        test_api_button.clicked.connect(self.test_api_connection)
-        
         save_settings_button = QPushButton("Save Settings")
         save_settings_button.clicked.connect(self.save_settings)
-        
-        layout.addWidget(test_api_button)
+
         layout.addWidget(save_settings_button)
         layout.addStretch()
         
@@ -484,14 +560,14 @@ class AWBTrackerApp(QMainWindow):
         
         about_text = f"""
         <h1>{APP_NAME} v{APP_VERSION}</h1>
-        <p>An application for tracking air waybill (AWB) shipments.</p>
+        <p>An application for tracking DHL shipments.</p>
         <p><b>Features:</b></p>
         <ul>
             <li>Search for multiple AWB tracking numbers</li>
-            <li>View shipment details including origin, destination, status, and timestamp</li>
+            <li>View shipment details including origin, destination, status, timestamp, and history</li>
             <li>Filter data by AWB, Origin, and Status</li>
             <li>Persistent caching tracking information to reduce API calls</li>
-            <li>Export filtered data to CSV</li>
+            <li>Export data to CSV</li>
             <li>Persistent comments section</li>
         </ul>
         <p>&copy; 2025 All rights reserved.</p>
@@ -514,31 +590,6 @@ class AWBTrackerApp(QMainWindow):
         else:
             self.api_key_label.setEchoMode(QLineEdit.Password)
             self.toggle_api_visibility.setText("Show")
-    
-    def test_api_connection(self):
-        try:
-            response = requests.get(
-                f"{API_ENDPOINTS.get(self.current_user, '')}status",
-                headers={"Authorization": f"Bearer {self.current_api}"},
-                timeout=10,
-                verify=False  
-            )
-
-            if response.status_code == 200:
-                QMessageBox.information(
-                    self, "API Test Successful",
-                    f"Successfully connected to the {self.current_user} API."
-                )
-            else:
-                QMessageBox.warning(
-                    self, "API Test Failed",
-                    f"Failed to connect: {response.status_code} - {response.text}"
-                )
-        except Exception as e:
-            QMessageBox.critical(
-                self, "API Connection Error",
-                f"Error connecting to API: {str(e)}"
-            )
 
     def search_awb(self):
         awb_input = self.awb_input.text().strip()
@@ -546,13 +597,10 @@ class AWBTrackerApp(QMainWindow):
             QMessageBox.warning(self, "Input Error", "Please enter at least one AWB number.")
             return
         
-        # Split by commas to handle multiple AWBs
         awb_list = [awb.strip() for awb in awb_input.split(',') if awb.strip()]
         
-        # Clear current results
         self.results_table.setRowCount(0)
         
-        # First check cache for the AWBs if cache is enabled
         found_in_cache = []
         remaining_awbs = awb_list.copy()
         
@@ -565,11 +613,9 @@ class AWBTrackerApp(QMainWindow):
                             remaining_awbs.remove(awb)
                         break
         
-        # Show progress bar for API calls
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(bool(remaining_awbs))
         
-        # If there are AWBs not in cache, make API calls in a separate thread
         if remaining_awbs:
             self.api_worker = ApiWorker(self.api_client, remaining_awbs)
             self.api_worker.progress.connect(self.update_progress)
@@ -577,7 +623,6 @@ class AWBTrackerApp(QMainWindow):
             self.api_worker.error.connect(self.show_api_error)
             self.api_worker.start()
         else:
-            # If all AWBs were found in cache, just display those results
             self.display_results(found_in_cache)
             self.update_filter_options(found_in_cache)
     
@@ -585,26 +630,24 @@ class AWBTrackerApp(QMainWindow):
         self.progress_bar.setValue(value)
     
     def show_api_error(self, error_message):
-        self.statusBar().showMessage(error_message, 5000)  # Show for 5 seconds
+        self.statusBar().showMessage(error_message, 5000)
     
     def process_api_results(self, api_results, cache_results):
         self.progress_bar.setVisible(False)
         
-        # Add new results to cache if cache is enabled
         if self.cache_enabled.isChecked() and api_results:
-            self.cache_data.extend(api_results)
+            existing_awbs = {entry['awb'] for entry in self.cache_data}
+            new_entries = [r for r in api_results if r['awb'] not in existing_awbs]
+            self.cache_data.extend(new_entries)
             self.save_cache()
+            self.update_cache_display()
         
-        # Combine results from cache and API
         all_results = cache_results + api_results
         
-        # Display combined results
         self.display_results(all_results)
         
-        # Update available filter options
         self.update_filter_options(all_results)
         
-        # Show message about results
         if all_results:
             self.statusBar().showMessage(f"Found {len(all_results)} shipments", 3000)
         else:
@@ -619,58 +662,67 @@ class AWBTrackerApp(QMainWindow):
             'delayed': QColor(255, 200, 200),    # Light red
             'exception': QColor(255, 200, 200)   # Light red
         }
-        
+
         comment_bg_color = QColor(255, 255, 180)  # Light yellow for rows with comments
-        
+
         for row, data in enumerate(results):
-            for col, value in enumerate([
-                data['awb'],
-                data['origin'],
-                data['destination'],
-                data['status'],
-                data.get('delivered_on', 'N/A')
-            ]):
+            row_values = [
+                data.get('awb', 'N/A'),
+                data.get('origin', 'UNKNOWN'),
+                data.get('destination', 'UNKNOWN'),
+                data.get('status', 'N/A'),
+                data.get('delivered_on', 'N/A'),
+                data.get('eta', 'N/A'),
+                data.get('proof_of_delivery', 'N/A')
+            ]
+
+            for col, value in enumerate(row_values):
                 item = QTableWidgetItem(value)
+                if col == 6 and value != "N/A":
+                    item.setForeground(QColor('blue'))
+                    font = item.font()
+                    font.setUnderline(True)
+                    item.setFont(font)
+                    item.setToolTip("Ctrl+Click to open POD link")
                 self.results_table.setItem(row, col, item)
-            
-            status = data['status'].lower()
+
+            status = data.get('status', '').lower()
             for status_key, color in color_map.items():
                 if status_key in status:
-                    for col in range(5):
-                        self.results_table.item(row, col).setBackground(color)
+                    for col in range(len(row_values)):
+                        item = self.results_table.item(row, col)
+                        if item:
+                            item.setBackground(color)
                     break
-            
-            # Highlight if AWB has a comment
-            awb = data['awb']
+
+            awb = data.get('awb', '')
             if awb in self.comments_data:
-                for col in range(5):
-                    # Blend the comment highlight with existing color or override
-                    self.results_table.item(row, col).setBackground(comment_bg_color)
+                for col in range(6):
+                    item = self.results_table.item(row, col)
+                    if item:
+                        item.setBackground(comment_bg_color)
+
+        self.summary_label.setText(f"Total Shipments: {len(results)}")
     
     def update_filter_options(self, results):
-        # Save current selections
         current_origin = self.filter_origin.currentText()
         current_status = self.filter_status.currentText()
         
-        # Clear and repopulate filter options
         self.filter_origin.clear()
         self.filter_status.clear()
         
         self.filter_origin.addItem("All Origins")
         self.filter_status.addItem("All Statuses")
         
-        # Collect unique values
         origins = set(data['origin'] for data in results)
         statuses = set(data['status'] for data in results)
         
-        # Add to dropdowns
         for origin in sorted(origins):
             self.filter_origin.addItem(origin)
         
         for status in sorted(statuses):
             self.filter_status.addItem(status)
         
-        # Restore selections if they still exist
         origin_index = self.filter_origin.findText(current_origin)
         if origin_index >= 0:
             self.filter_origin.setCurrentIndex(origin_index)
@@ -683,21 +735,30 @@ class AWBTrackerApp(QMainWindow):
         awb_filter = self.filter_awb.text().lower()
         origin_filter = self.filter_origin.currentText()
         status_filter = self.filter_status.currentText()
-        
+
         for row in range(self.results_table.rowCount()):
             show_row = True
-            
-            # Apply each filter
-            if awb_filter and awb_filter not in self.results_table.item(row, 0).text().lower():
-                show_row = False
-                
-            if origin_filter != "All Origins" and self.results_table.item(row, 1).text() != origin_filter:
-                show_row = False
-                
-            if status_filter != "All Statuses" and self.results_table.item(row, 3).text() != status_filter:
-                show_row = False
-                
+
+            awb_item = self.results_table.item(row, 0)
+            origin_item = self.results_table.item(row, 1)
+            status_item = self.results_table.item(row, 3)
+
+            if awb_filter:
+                if awb_item is None or awb_filter not in awb_item.text().lower():
+                    show_row = False
+
+            if origin_filter != "All Origins":
+                if origin_item is None or origin_item.text() != origin_filter:
+                    show_row = False
+
+            if status_filter != "All Statuses":
+                if status_item is None or status_item.text() != status_filter:
+                    show_row = False
+
             self.results_table.setRowHidden(row, not show_row)
+
+        visible_rows = sum(not self.results_table.isRowHidden(row) for row in range(self.results_table.rowCount()))
+        self.summary_label.setText(f"Total Shipments: {visible_rows}")
     
     def export_data(self, source_table=None):
         if not hasattr(source_table, "rowCount"):
@@ -710,7 +771,6 @@ class AWBTrackerApp(QMainWindow):
                 for col in range(source_table.columnCount()):
                     row_data.append(source_table.item(row, col).text())
 
-                # Fetch AWB from first column to get comment
                 awb = source_table.item(row, 0).text()
                 comment = self.comments_data.get(awb, "")
                 row_data.append(comment)
@@ -728,7 +788,6 @@ class AWBTrackerApp(QMainWindow):
         if not filename:
             return
 
-        # Header with added Comments column
         headers = ["AWB", "Origin", "Destination", "Status", "Timestamp", "Comments"]
 
         if filename.endswith('.csv'):
